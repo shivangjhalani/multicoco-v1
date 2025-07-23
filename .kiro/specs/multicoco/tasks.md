@@ -12,7 +12,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
 
 > All design references in tasks refer to comprehensive-design.md
 
-- [-] 1. Set up project structure and core interfaces
+- [ ] 1. Set up project structure and core interfaces
   - Create directory structure following comprehensive-design.md Architecture section: multicoco/ with model.py, dataset.py, collator.py, trainer.py, evaluator.py, utils.py
   - Define base configuration classes implementing MultiCoCoConfig dataclass from comprehensive-design.md Data Models section
   - Set up package initialization with proper imports following comprehensive-design.md Components and Interfaces

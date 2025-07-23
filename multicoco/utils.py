@@ -137,7 +137,91 @@ class MultiCoCoConfig:
         with open(yaml_path, 'r') as f:
             config_dict = yaml.safe_load(f)
         
+        # Convert string values to appropriate types
+        config_dict = cls._convert_types(config_dict)
+        
         return cls(**config_dict)
+    
+    @classmethod
+    def _convert_types(cls, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert string values from YAML to appropriate types.
+        
+        Args:
+            config_dict: Raw configuration dictionary from YAML
+            
+        Returns:
+            Configuration dictionary with proper types
+        """
+        # Define type mappings for configuration fields
+        type_mappings = {
+            # Numeric fields that should be int
+            'c_thought': int,
+            'epochs_per_stage': int,
+            'max_latent_stage': int,
+            'batch_size': int,
+            'gradient_accumulation_steps': int,
+            'num_epochs': int,
+            'warmup_steps': int,
+            'max_sequence_length': int,
+            'image_size': int,
+            'max_num_tiles': int,
+            'num_image_token': int,
+            'world_size': int,
+            'num_workers': int,
+            'max_new_tokens': int,
+            'select_layer': int,
+            'max_dynamic_patch': int,
+            'min_dynamic_patch': int,
+            'force_image_size': int,
+            'save_steps': int,
+            'eval_steps': int,
+            'seed': int,
+            
+            # Numeric fields that should be float
+            'learning_rate': float,
+            'weight_decay': float,
+            'max_grad_norm': float,
+            'temperature': float,
+            'top_p': float,
+            'downsample_ratio': float,
+            
+            # Boolean fields
+            'low_cpu_mem_usage': bool,
+            'trust_remote_code': bool,
+            'use_flash_attn': bool,
+            'pad_latent_to_max': bool,
+            'reset_optimizer': bool,
+            'bf16': bool,
+            'use_gradient_checkpointing': bool,
+            'distributed': bool,
+            'do_sample': bool,
+            'use_thumbnail': bool,
+            'pad2square': bool,
+            'dynamic_image_size': bool,
+        }
+        
+        # Convert types
+        converted_dict = {}
+        for key, value in config_dict.items():
+            if key in type_mappings and value is not None:
+                target_type = type_mappings[key]
+                try:
+                    if target_type == bool:
+                        # Handle boolean conversion from various formats
+                        if isinstance(value, str):
+                            converted_dict[key] = value.lower() in ('true', 'yes', '1', 'on')
+                        else:
+                            converted_dict[key] = bool(value)
+                    else:
+                        converted_dict[key] = target_type(value)
+                except (ValueError, TypeError) as e:
+                    print(f"Warning: Could not convert {key}={value} to {target_type.__name__}, using default")
+                    converted_dict[key] = value
+            else:
+                converted_dict[key] = value
+        
+        return converted_dict
     
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'MultiCoCoConfig':
@@ -150,6 +234,8 @@ class MultiCoCoConfig:
         Returns:
             MultiCoCoConfig instance
         """
+        # Convert types for dictionary input as well
+        config_dict = cls._convert_types(config_dict)
         return cls(**config_dict)
     
     def to_yaml(self, yaml_path: str) -> None:
