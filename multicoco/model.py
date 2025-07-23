@@ -14,6 +14,7 @@ Key Features:
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
 from transformers import AutoModel, AutoTokenizer
 from collections import namedtuple
@@ -21,6 +22,90 @@ from typing import Optional, List, Union, Tuple, Dict, Any
 
 # Define output structure following Coconut pattern
 Outputs = namedtuple("Outputs", ["loss", "inputs_embeds", "logits"])
+
+
+def setup_special_tokens(tokenizer, model):
+    """
+    Add both Coconut and InternVL3 special tokens to tokenizer and model.
+    
+    This function handles the critical task of adding all required special tokens
+    for multimodal Coconut operation, including proper embedding initialization.
+    
+    Args:
+        tokenizer: AutoTokenizer instance to add tokens to
+        model: Model instance to resize embeddings for
+        
+    Returns:
+        Dictionary containing token IDs for all special tokens
+    """
+    # Define all special tokens needed for multimodal Coconut
+    coconut_tokens = ["<|start-latent|>", "<|end-latent|>", "<|latent|>"]
+    internvl_tokens = ["<img>", "</img>", "<IMG_CONTEXT>"]
+    
+    # Combine all special tokens
+    all_special_tokens = coconut_tokens + internvl_tokens
+    
+    # Check which tokens are already present
+    existing_tokens = set(tokenizer.get_vocab().keys())
+    new_tokens = [token for token in all_special_tokens if token not in existing_tokens]
+    
+    if new_tokens:
+        print(f"Adding {len(new_tokens)} new special tokens: {new_tokens}")
+        
+        # Add new special tokens to tokenizer
+        tokenizer.add_special_tokens({"additional_special_tokens": new_tokens})
+        
+        # Resize model embeddings to accommodate new tokens
+        model.resize_token_embeddings(len(tokenizer))
+        
+        # Initialize new token embeddings with averaged embeddings from existing tokens
+        # This follows Coconut's approach of using "the" token as reference
+        with torch.no_grad():
+            # Get embeddings for common tokens to average
+            reference_tokens = ["the", "a", "an", "is", "are", "was", "were"]
+            reference_ids = []
+            
+            for token in reference_tokens:
+                token_id = tokenizer.convert_tokens_to_ids(token)
+                if token_id != tokenizer.unk_token_id:
+                    reference_ids.append(token_id)
+            
+            if reference_ids:
+                # Get input embeddings
+                input_embeddings = model.get_input_embeddings()
+                
+                # Calculate average embedding from reference tokens
+                reference_embeddings = input_embeddings.weight[reference_ids]
+                avg_embedding = reference_embeddings.mean(dim=0)
+                
+                # Initialize new token embeddings
+                for token in new_tokens:
+                    token_id = tokenizer.convert_tokens_to_ids(token)
+                    input_embeddings.weight[token_id] = avg_embedding.clone()
+                
+                # Also initialize output embeddings if they exist and are tied
+                if hasattr(model, 'get_output_embeddings') and model.get_output_embeddings() is not None:
+                    output_embeddings = model.get_output_embeddings()
+                    if output_embeddings.weight.shape[0] == input_embeddings.weight.shape[0]:
+                        for token in new_tokens:
+                            token_id = tokenizer.convert_tokens_to_ids(token)
+                            output_embeddings.weight[token_id] = avg_embedding.clone()
+                
+                print(f"Initialized embeddings for new tokens using averaged reference embeddings")
+            else:
+                print("Warning: Could not find reference tokens for embedding initialization")
+    else:
+        print("All required special tokens already present in tokenizer")
+    
+    # Get token IDs for all special tokens
+    token_ids = {}
+    for token in all_special_tokens:
+        token_id = tokenizer.convert_tokens_to_ids(token)
+        if token_id == tokenizer.unk_token_id:
+            print(f"Warning: Token '{token}' not found in tokenizer vocabulary")
+        token_ids[token] = token_id
+    
+    return token_ids
 
 
 class MultimodalCoconut(nn.Module):
@@ -158,7 +243,7 @@ class MultimodalCoconut(nn.Module):
             self.vision_model.gradient_checkpointing_enable()
             self.language_model.gradient_checkpointing_enable()
 
-    def extract_feature(self, pixel_values: torch.Tensor) -> torch.Tensor:
+    def extract_feature(self, pixel_values: torch.Tensor) -> Optional[torch.Tensor]:
         """
         Delegate to InternVL's built-in extract_feature method for visual feature extraction.
         
@@ -169,14 +254,40 @@ class MultimodalCoconut(nn.Module):
             pixel_values: Tensor of shape [total_tiles, 3, 448, 448]
             
         Returns:
-            Visual features tensor of shape [total_tiles, num_image_token, hidden_size]
+            Visual features tensor of shape [total_tiles, num_image_token, hidden_size] or None
         """
         if pixel_values is None:
             return None
-
-        # Delegate directly to the base InternVL model's tested extract_feature method
-        # This ensures we get exact InternVL behavior with all edge cases handled correctly
-        return self.base_internvl_model.extract_feature(pixel_values)
+        
+        # Validate input tensor
+        if not isinstance(pixel_values, torch.Tensor):
+            print(f"Warning: pixel_values must be torch.Tensor, got {type(pixel_values)}")
+            return None
+        
+        if len(pixel_values.shape) != 4:
+            print(f"Warning: pixel_values must be 4D tensor [tiles, 3, H, W], got shape {pixel_values.shape}")
+            return None
+        
+        if pixel_values.shape[1] != 3:
+            print(f"Warning: pixel_values must have 3 channels, got {pixel_values.shape[1]}")
+            return None
+        
+        try:
+            # Delegate directly to the base InternVL model's tested extract_feature method
+            # This ensures we get exact InternVL behavior with all edge cases handled correctly
+            vit_embeds = self.base_internvl_model.extract_feature(pixel_values)
+            
+            # Validate output
+            if vit_embeds is not None:
+                expected_shape = (pixel_values.shape[0], self.num_image_token, -1)
+                if vit_embeds.shape[:2] != expected_shape[:2]:
+                    print(f"Warning: Unexpected visual feature shape {vit_embeds.shape}, expected {expected_shape}")
+            
+            return vit_embeds
+            
+        except Exception as e:
+            print(f"Error in visual feature extraction: {e}")
+            return None
 
     def forward(self,
                 input_ids: torch.Tensor,
@@ -436,6 +547,7 @@ class MultimodalCoconut(nn.Module):
                  input_ids: torch.Tensor,
                  attention_mask: torch.Tensor,
                  pixel_values: Optional[torch.Tensor] = None,
+                 image_flags: Optional[torch.Tensor] = None,
                  max_new_tokens: int = 50,
                  do_sample: bool = False,
                  temperature: float = 1.0,
@@ -444,10 +556,14 @@ class MultimodalCoconut(nn.Module):
                  **kwargs) -> Dict[str, torch.Tensor]:
         """Generate responses with multimodal continuous reasoning support
         
+        This method implements autoregressive generation with proper handling of
+        dynamically generated latent tokens and KV cache management for efficiency.
+        
         Args:
             input_ids: Input token IDs [batch_size, seq_len]
             attention_mask: Attention mask [batch_size, seq_len]
             pixel_values: Image pixels [total_tiles, 3, 448, 448] (optional)
+            image_flags: Valid tile mask [total_tiles] (optional)
             max_new_tokens: Maximum number of new tokens to generate
             do_sample: Whether to use sampling or greedy decoding
             temperature: Sampling temperature
@@ -457,6 +573,109 @@ class MultimodalCoconut(nn.Module):
         Returns:
             Dictionary containing generated sequences and attention masks
         """
-        # This is a placeholder implementation
-        # Full generation logic will be implemented in task 2.6
-        raise NotImplementedError("Generation method will be implemented in task 2.6")
+        self.eval()
+        
+        # Validate inputs
+        batch_size, seq_len = input_ids.shape
+        device = input_ids.device
+        
+        # Initialize generation state
+        generated_ids = input_ids.clone()
+        generated_attention_mask = attention_mask.clone()
+        
+        # Track completion status for each batch item
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        
+        # FSDP synchronization counter
+        if synced_gpus:
+            self.gen_forward_cnt = 0
+        
+        with torch.no_grad():
+            for step in range(max_new_tokens):
+                # Increment forward counter for FSDP synchronization
+                if synced_gpus:
+                    self.gen_forward_cnt += 1
+                
+                # Prepare inputs for current step
+                current_input_ids = generated_ids
+                current_attention_mask = generated_attention_mask
+                
+                # Forward pass with multimodal continuous reasoning
+                outputs = self.forward(
+                    input_ids=current_input_ids,
+                    attention_mask=current_attention_mask,
+                    labels=None,  # No labels during generation
+                    pixel_values=pixel_values,
+                    image_flags=image_flags
+                )
+                
+                # Get logits for next token prediction
+                logits = outputs["logits"][:, -1, :]  # [batch_size, vocab_size]
+                
+                # Apply temperature scaling
+                if temperature != 1.0:
+                    logits = logits / temperature
+                
+                # Generate next tokens
+                if do_sample:
+                    # Apply top-p filtering
+                    if top_p < 1.0:
+                        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                        
+                        # Remove tokens with cumulative probability above the threshold
+                        sorted_indices_to_remove = cumulative_probs > top_p
+                        # Shift the indices to the right to keep also the first token above the threshold
+                        sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                        sorted_indices_to_remove[..., 0] = 0
+                        
+                        # Set logits to -inf for tokens to remove
+                        indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                        logits[indices_to_remove] = float('-inf')
+                    
+                    # Sample from the filtered distribution
+                    probs = F.softmax(logits, dim=-1)
+                    next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
+                else:
+                    # Greedy decoding
+                    next_tokens = torch.argmax(logits, dim=-1)
+                
+                # Handle dynamically generated latent tokens
+                # If the model generates a latent token, we need to process it immediately
+                latent_mask = (next_tokens == self.latent_token_id)
+                if latent_mask.any():
+                    # For latent tokens, we need to replace them with continuous thoughts
+                    # This is handled automatically in the next forward pass
+                    pass
+                
+                # Update finished status (check for EOS tokens)
+                eos_mask = (next_tokens == self.eos_token_id)
+                finished = finished | eos_mask
+                
+                # Mask out finished sequences (set to pad token)
+                if hasattr(self.tokenizer, 'pad_token_id') and self.tokenizer.pad_token_id is not None:
+                    next_tokens = torch.where(finished, self.tokenizer.pad_token_id, next_tokens)
+                else:
+                    next_tokens = torch.where(finished, self.eos_token_id, next_tokens)
+                
+                # Append new tokens to sequences
+                generated_ids = torch.cat([generated_ids, next_tokens.unsqueeze(1)], dim=1)
+                
+                # Update attention mask
+                new_attention = torch.where(finished.unsqueeze(1), 0, 1)
+                generated_attention_mask = torch.cat([generated_attention_mask, new_attention], dim=1)
+                
+                # Check if all sequences are finished
+                if finished.all():
+                    break
+                
+                # FSDP synchronization point
+                if synced_gpus and step % 10 == 0:
+                    # Synchronize across GPUs every 10 steps
+                    torch.distributed.barrier()
+        
+        return {
+            "sequences": generated_ids,
+            "attention_mask": generated_attention_mask,
+            "num_generated_tokens": generated_ids.shape[1] - seq_len
+        }

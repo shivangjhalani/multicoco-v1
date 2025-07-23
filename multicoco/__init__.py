@@ -12,7 +12,7 @@ Core Components:
 - MultimodalCoconutEvaluator: Evaluation and metrics system
 """
 
-from .model import MultimodalCoconut
+from .model import MultimodalCoconut, setup_special_tokens
 from .dataset import VQAMultimodalProcessor
 from .collator import MultimodalCoconutCollator
 from .trainer import MultimodalCoconutTrainer
@@ -24,6 +24,7 @@ __author__ = "MultiCoCo Team"
 
 __all__ = [
     "MultimodalCoconut",
+    "setup_special_tokens",
     "VQAMultimodalProcessor", 
     "MultimodalCoconutCollator",
     "MultimodalCoconutTrainer",

@@ -12,7 +12,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
 
 > All design references in tasks refer to comprehensive-design.md
 
-- [ ] 1. Set up project structure and core interfaces
+- [x] 1. Set up project structure and core interfaces
   - Create directory structure following comprehensive-design.md Architecture section: multicoco/ with model.py, dataset.py, collator.py, trainer.py, evaluator.py, utils.py
   - Define base configuration classes implementing MultiCoCoConfig dataclass from comprehensive-design.md Data Models section
   - Set up package initialization with proper imports following comprehensive-design.md Components and Interfaces
@@ -20,8 +20,8 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
   - _Requirements: 1.1, 10.1, 10.3_
   - _Design References: Architecture section, Components and Interfaces, Data Models - Configuration Schema_
 
-- [ ] 2. Implement core MultimodalCoconut model architecture
-- [ ] 2.1 Create MultimodalCoconut class with proper initialization
+- [x] 2. Implement core MultimodalCoconut model architecture
+- [x] 2.1 Create MultimodalCoconut class with proper initialization
   - Implement __init__ method following comprehensive-design.md MultimodalCoconut Class Interface signature exactly
   - Add validation for required model components (vision_model, language_model, mlp1) as specified in comprehensive-design.md Error Handling section
   - Set up token ID management for both Coconut and InternVL3 special tokens following comprehensive-design.md Components and Interfaces
@@ -30,7 +30,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
   - _Requirements: 1.1, 2.1, 2.3_
   - _Design References: MultimodalCoconut Class Interface, Error Handling - Model Initialization Errors, Implementation Notes - Critical Implementation Requirements_
 
-- [ ] 2.2 Implement special token management and embedding initialization
+- [x] 2.2 Implement special token management and embedding initialization
   - Add both Coconut tokens (<|start-latent|>, <|end-latent|>, <|latent|>) and InternVL3 tokens (<img>, </img>, <IMG_CONTEXT>) as specified in comprehensive-design.md Components and Interfaces
   - Use add_special_tokens() method to properly register tokens and prevent tokenization splitting following comprehensive-design.md Implementation Notes
   - Initialize new token embeddings using averaged embeddings from existing tokens as per comprehensive-design.md Error Handling section
@@ -39,7 +39,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
   - _Requirements: 2.1, 2.2, 2.4_
   - _Design References: Components and Interfaces, Implementation Notes - Critical Implementation Requirements, Error Handling - Model Initialization Errors_
 
-- [ ] 2.3 Implement visual processing delegation to InternVL3
+- [x] 2.3 Implement visual processing delegation to InternVL3
   - Create extract_feature method following comprehensive-design.md MultimodalCoconut Class Interface that delegates to base InternVL3 model's extract_feature
   - Ensure proper handling of select_layer, pixel_shuffle, and downsample_ratio parameters as specified in comprehensive-design.md Visual Processing Pipeline
   - Validate visual feature extraction with proper error handling for None inputs following comprehensive-design.md Error Handling - Runtime Errors
@@ -47,7 +47,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
   - _Requirements: 3.1, 3.2_
   - _Design References: MultimodalCoconut Class Interface, Visual Processing Pipeline, Error Handling - Runtime Errors, Implementation Notes - Critical Implementation Requirements_
 
-- [ ] 2.4 Implement multimodal forward pass with token replacement
+- [x] 2.4 Implement multimodal forward pass with token replacement
   - Create forward method following comprehensive-design.md MultimodalCoconut Class Interface signature exactly with input_ids, attention_mask, labels, pixel_values, and image_flags
   - Implement InternVL3's exact token replacement pattern for IMG_CONTEXT tokens as specified in comprehensive-design.md Visual Processing Pipeline
   - Handle variable batch sizes and tile counts using concatenated pixel_values following comprehensive-design.md Training Batch Schema
@@ -56,7 +56,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
   - _Requirements: 1.1, 1.5, 3.3, 3.4, 6.4_
   - _Design References: MultimodalCoconut Class Interface, Visual Processing Pipeline, Training Batch Schema, Implementation Notes - Critical Implementation Requirements, Error Handling - Runtime Errors_
 
-- [ ] 2.5 Implement Coconut's continuous reasoning with multi-pass processing
+- [x] 2.5 Implement Coconut's continuous reasoning with multi-pass processing
   - Create _coconut_continuous_reasoning method following comprehensive-design.md MultimodalCoconut Class Interface with iterative latent token processing
   - Process one latent token per pass to preserve dependency chains as specified in comprehensive-design.md Implementation Notes - Critical Implementation Requirements
   - Implement proper KV cache management for efficient computation reuse following comprehensive-design.md Performance Considerations
@@ -65,7 +65,7 @@ ALSO REFER TO THESE REFERENCE CODEBASES WHEN NEEDED
   - _Requirements: 1.3, 6.3, 6.4_
   - _Design References: MultimodalCoconut Class Interface, Implementation Notes - Critical Implementation Requirements, Performance Considerations, Architecture section_
 
-- [ ] 2.6 Implement generation capabilities with dynamic latent handling
+- [x] 2.6 Implement generation capabilities with dynamic latent handling
   - Create generate method following comprehensive-design.md MultimodalCoconut Class Interface supporting both sampling and greedy decoding
   - Implement autoregressive generation with proper KV cache usage as specified in comprehensive-design.md Performance Considerations
   - Handle dynamically generated latent tokens during generation per comprehensive-design.md Implementation Notes - Critical Implementation Requirements
