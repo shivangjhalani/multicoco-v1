@@ -1,0 +1,74 @@
+# A-OKVQA Dataset Configuration
+# Configuration for training MultiCoCo on A-OKVQA dataset
+
+# Model configuration
+model_id: "OpenGVLab/InternVL3-1B-Pretrained"
+torch_dtype: "bfloat16"
+low_cpu_mem_usage: true
+trust_remote_code: true
+use_flash_attn: true
+
+# Coconut-specific parameters
+c_thought: 2                    # Continuous thoughts per reasoning step
+epochs_per_stage: 3             # Training epochs per stage
+max_latent_stage: 4             # Maximum latent stages (0-4)
+pad_latent_to_max: true         # Consistent padding strategy
+reset_optimizer: true          # Reset optimizer between stages
+
+# Training configuration
+batch_size: 8
+gradient_accumulation_steps: 4
+num_epochs: 20
+learning_rate: 5e-5
+weight_decay: 0.01
+warmup_steps: 500
+max_grad_norm: 1.0
+bf16: true
+use_gradient_checkpointing: true
+
+# Data configuration
+max_sequence_length: 2048
+image_size: 448
+max_num_tiles: 12
+num_image_token: 256
+
+# A-OKVQA specific dataset configuration
+dataset_name: "aokvqa"
+hf_dataset_id: "HuggingFaceM4/A-OKVQA"
+train_split: "train"
+val_split: "validation"
+test_split: "test"
+
+# Hardware configuration
+device: "cuda"
+world_size: 1
+distributed: false
+num_workers: 4
+
+# Generation parameters
+max_new_tokens: 100
+temperature: 1.0
+top_p: 0.9
+do_sample: false
+
+# InternVL3 specific parameters
+downsample_ratio: 0.5
+ps_version: "v2"
+select_layer: -1
+template: "internvl2_5"
+max_dynamic_patch: 12
+min_dynamic_patch: 1
+use_thumbnail: true
+pad2square: false
+dynamic_image_size: true
+force_image_size: 448
+
+# Logging and output
+output_dir: "./outputs/aokvqa"
+logging_dir: "./logs/aokvqa"
+log_level: "INFO"
+save_steps: 500
+eval_steps: 500
+
+# Reproducibility
+seed: 42
