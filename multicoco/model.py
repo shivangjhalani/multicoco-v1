@@ -33,7 +33,7 @@ def setup_special_tokens(tokenizer, model):
     
     Args:
         tokenizer: AutoTokenizer instance to add tokens to
-        model: Model instance to resize embeddings for
+        model: Model instance (InternVL model or language model) to resize embeddings for
         
     Returns:
         Dictionary containing token IDs for all special tokens
@@ -55,8 +55,41 @@ def setup_special_tokens(tokenizer, model):
         # Add new special tokens to tokenizer
         tokenizer.add_special_tokens({"additional_special_tokens": new_tokens})
         
+        # Determine which model to resize based on the model type
+        target_model = model
+        if hasattr(model, 'language_model'):
+            # This is an InternVL model, use the language model component
+            target_model = model.language_model
+            print("Using language_model component for token embedding resize")
+        
         # Resize model embeddings to accommodate new tokens
-        model.resize_token_embeddings(len(tokenizer))
+        try:
+            target_model.resize_token_embeddings(len(tokenizer))
+        except AttributeError as e:
+            print(f"Warning: Could not resize embeddings automatically: {e}")
+            print("Attempting manual embedding resize...")
+            
+            # Manual embedding resize for models that don't support automatic resize
+            old_embeddings = target_model.get_input_embeddings()
+            new_embeddings = torch.nn.Embedding(len(tokenizer), old_embeddings.embedding_dim)
+            
+            # Copy old embeddings
+            with torch.no_grad():
+                new_embeddings.weight[:old_embeddings.num_embeddings] = old_embeddings.weight
+            
+            # Replace embeddings
+            target_model.set_input_embeddings(new_embeddings)
+            
+            # Handle output embeddings if they exist
+            if hasattr(target_model, 'get_output_embeddings') and target_model.get_output_embeddings() is not None:
+                old_output_embeddings = target_model.get_output_embeddings()
+                new_output_embeddings = torch.nn.Linear(old_output_embeddings.in_features, len(tokenizer), bias=False)
+                
+                with torch.no_grad():
+                    new_output_embeddings.weight[:old_output_embeddings.out_features] = old_output_embeddings.weight
+                
+                if hasattr(target_model, 'set_output_embeddings'):
+                    target_model.set_output_embeddings(new_output_embeddings)
         
         # Initialize new token embeddings with averaged embeddings from existing tokens
         # This follows Coconut's approach of using "the" token as reference
@@ -71,8 +104,8 @@ def setup_special_tokens(tokenizer, model):
                     reference_ids.append(token_id)
             
             if reference_ids:
-                # Get input embeddings
-                input_embeddings = model.get_input_embeddings()
+                # Get input embeddings from the target model
+                input_embeddings = target_model.get_input_embeddings()
                 
                 # Calculate average embedding from reference tokens
                 reference_embeddings = input_embeddings.weight[reference_ids]
@@ -81,15 +114,17 @@ def setup_special_tokens(tokenizer, model):
                 # Initialize new token embeddings
                 for token in new_tokens:
                     token_id = tokenizer.convert_tokens_to_ids(token)
-                    input_embeddings.weight[token_id] = avg_embedding.clone()
+                    if token_id < input_embeddings.weight.shape[0]:
+                        input_embeddings.weight[token_id] = avg_embedding.clone()
                 
-                # Also initialize output embeddings if they exist and are tied
-                if hasattr(model, 'get_output_embeddings') and model.get_output_embeddings() is not None:
-                    output_embeddings = model.get_output_embeddings()
-                    if output_embeddings.weight.shape[0] == input_embeddings.weight.shape[0]:
+                # Also initialize output embeddings if they exist
+                if hasattr(target_model, 'get_output_embeddings') and target_model.get_output_embeddings() is not None:
+                    output_embeddings = target_model.get_output_embeddings()
+                    if hasattr(output_embeddings, 'weight') and output_embeddings.weight.shape[0] >= len(tokenizer):
                         for token in new_tokens:
                             token_id = tokenizer.convert_tokens_to_ids(token)
-                            output_embeddings.weight[token_id] = avg_embedding.clone()
+                            if token_id < output_embeddings.weight.shape[0]:
+                                output_embeddings.weight[token_id] = avg_embedding.clone()
                 
                 print(f"Initialized embeddings for new tokens using averaged reference embeddings")
             else:
